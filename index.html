@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>永远的七日之都</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #1e1e2f;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* 舞台容器：用相对定位做四条边的定位基准 */
+        .frame {
+            position: relative;
+            width: 200px;
+            height: 200px;
+            overflow: hidden;   /* 超出 200×200 容器的部分不可见 */
+        }
+
+        /* 内部白色底：铺满整个容器，被四条边遮挡后中间露出长方形 */
+        .frame .white {
+            position: absolute;
+            inset: 0;
+            background: #ffffff;
+        }
+
+        /* 四条边统一基础样式 */
+        .frame .edge {
+            position: absolute;
+            background: #000000;
+        }
+
+        /* 上边：横向，较细 */
+        .frame .edge-top {
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 10px;
+        }
+
+        /* 下边：横向，较细 */
+        .frame .edge-bottom {
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 10px;
+        }
+
+        /* 左边：竖向，较粗 */
+        .frame .edge-left {
+            top: 0;
+            left: 0;
+            width: 22px;
+            height: 100%;
+        }
+
+        /* 右边：竖向，较粗 */
+        .frame .edge-right {
+            top: 0;
+            right: 0;
+            width: 22px;
+            height: 100%;
+        }
+
+        /* 覆盖在左右边上的新边：宽度相同，长度为五分之三 */
+        .frame .edge-overlay {
+            position: absolute;
+            width: 22px;
+            height: 60%;       /* 200px 的 3/5 = 120px */
+            background: #000000;
+        }
+
+        /* 左侧覆盖边：靠上 */
+        .frame .overlay-left {
+            top: 0;
+            left: 0;
+        }
+
+        /* 右侧覆盖边：靠下 */
+        .frame .overlay-right {
+            bottom: 0;
+            right: 0;
+        }
+
+        /* 覆盖条上的横向条：上边与覆盖条上边对齐 */
+        .frame .h-bar {
+            position: absolute;
+            top: 0;            /* 上边对上边 */
+            width: 22px;       /* 横向 22px */
+            height: 25px;      /* 纵向 25px */
+            background: #000000;
+        }
+
+        /* 右侧横向条贴右边缘；左侧横向条贴左边缘、贴覆盖条底部 */
+        .frame .overlay-right .h-bar { right: 0; }
+        .frame .overlay-left .h-bar {
+            left: 0;
+            top: auto;
+            bottom: 0;
+        }
+
+        /* 横向条端部的小矩形：横 22px × 纵 66px */
+        .frame .h-bar .v-block {
+            position: absolute;
+            width: 22px;
+            height: 66px;
+            background: #000000;
+        }
+
+        /* 右侧小矩形：贴横向条最左端、顶对齐 */
+        .frame .overlay-right .h-bar .v-block { left: 0; top: 0; }
+        /* 左侧小矩形：贴横向条最右端、底对齐（与右侧呈 180° 对角对称） */
+        .frame .overlay-left .h-bar .v-block { right: 0; bottom: 0; }
+
+        /* ===== 动画说明 ===== */
+        /* 动画由底部 script 中的正弦信号逐帧驱动（行内样式） */
+    </style>
+</head>
+<body>
+<div class="frame">
+    <div class="white"></div>
+    <div class="edge edge-top"></div>
+    <div class="edge edge-bottom"></div>
+    <div class="edge edge-left"></div>
+    <div class="edge edge-right"></div>
+    <div class="edge-overlay overlay-left">
+        <div class="h-bar">
+            <div class="v-block"></div>
+        </div>
+    </div>
+    <div class="edge-overlay overlay-right">
+        <div class="h-bar">
+            <div class="v-block"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const frame = document.querySelector('.frame');
+
+    // ===== 正弦信号驱动 =====
+    // 进度 p 随正弦波在 0→1→0 之间周期变化：p = (1 - cos(2π·phase/T)) / 2
+    const PERIOD = 2400;   // 一个完整周期 2.4s：1.2s 变到最终态，1.2s 变回初始态
+    const ROTATE = true;   // 整体旋转开关
+
+    // 初始态各部分尺寸（px）
+    const INITIAL = {
+        edgeW: 22,
+        overlayW: 22, overlayH: 120,   // 覆盖边高 60% = 120px
+        hbarW: 22,    hbarH: 25,
+        vblockW: 22,  vblockH: 66,
+    };
+
+    // 波峰最终态尺寸（px，边框宽度固定为 10）
+    const FINAL = {
+        overlayW: 75, overlayH: 85,
+        hbarW: 160,   hbarH: 8,
+        vblockW: 75,  vblockH: 50,
+    };
+
+    const edgesLR  = frame.querySelectorAll('.edge-left, .edge-right');   // 初始宽边
+    const edgesTB  = frame.querySelectorAll('.edge-top, .edge-bottom');   // 初始窄边
+    const overlays = frame.querySelectorAll('.edge-overlay');
+    const hbars    = frame.querySelectorAll('.h-bar');
+    const vblocks  = frame.querySelectorAll('.v-block');
+
+    // 按进度 p 插值并写入行内样式（p=1 波峰最终态；p=0 初始态）
+    function apply(p, inAscending) {
+        const mix = (a, b, t) => (a + (b - a) * t).toFixed(2) + 'px';
+
+        // ===== 边：上升段宽边 22 → 10、窄边不变 =====
+        // 下降段：宽边保持上升段终点 10 不变，窄边 10 → 22 渐变到宽边（保留变化过程）
+        if (inAscending) {
+            edgesLR.forEach(el => el.style.width = mix(INITIAL.edgeW, 10, p));
+            edgesTB.forEach(el => el.style.height = mix(10, 10, p));
+        } else {
+            const q = 1 - p;   // 下降进度 0→1
+            edgesLR.forEach(el => el.style.width = '10px');
+            edgesTB.forEach(el => el.style.height = mix(10, INITIAL.edgeW, q));
+        }
+
+        // ===== 覆盖条 / 横向条 / 端部矩形 =====
+        // 上升段：初始态 → 波峰最终态
+        // 下降段：宽度（初始 22，与老宽边同厚）收到 10（与新边同厚），其余维度原路倒放
+        const oWFrom = inAscending ? INITIAL.overlayW : 10;
+        overlays.forEach(el => {
+            el.style.width  = mix(oWFrom, FINAL.overlayW, p);
+            el.style.height = mix(INITIAL.overlayH, FINAL.overlayH, p);
+        });
+
+        const hWFrom = inAscending ? INITIAL.hbarW : 10;
+        hbars.forEach(el => {
+            el.style.width  = mix(hWFrom, FINAL.hbarW, p);
+            el.style.height = mix(INITIAL.hbarH, FINAL.hbarH, p);
+        });
+
+        const vWFrom = inAscending ? INITIAL.vblockW : 10;
+        vblocks.forEach(el => {
+            el.style.width  = mix(vWFrom, FINAL.vblockW, p);
+            el.style.height = mix(INITIAL.vblockH, FINAL.vblockH, p);
+        });
+    }
+
+    let phase = 0;   // 正弦相位
+    let last;        // 上一帧时间戳
+
+    function tick(now) {
+        if (last === undefined) last = now;
+        const dt = now - last;
+        last = now;
+        phase += dt;
+
+        const p = (1 - Math.cos(2 * Math.PI * phase / PERIOD)) / 2;
+
+        const halfSeg = Math.floor(phase / (PERIOD / 2));   // 第几个半周期
+        const inAscending = halfSeg % 2 === 0;              // 偶数段 = 上升段
+        apply(p, inAscending);
+
+        // ===== 整体旋转：与正弦严格同步，只保留一个 90° 周期 =====
+        // 每个半周期（上升段和下降段）都同步顺时针转 45°，到 90° 后回到 0° 循环
+        if (ROTATE) {
+            const segProgress = inAscending ? p : 1 - p;    // 当前段的进度 0→1
+            const rotation = (45 * (halfSeg + segProgress)) % 90;
+            frame.style.transform = `rotate(${rotation}deg)`;
+        } else {
+            frame.style.transform = 'none';
+        }
+
+        requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+</script>
+</body>
+</html>
